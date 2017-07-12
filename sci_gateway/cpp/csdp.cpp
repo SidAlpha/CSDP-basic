@@ -320,13 +320,13 @@ extern "C"
 
 	    struct blockmatrix X,Z;
 		double *y;
+
+		write_prob("prob.dat-s",m1,quot,C,b,constraints);
+
 		initsoln(m1,quot,C,b,constraints,&X,&y,&Z);
 		double pobj,dobj;
 
-		/*
-		* blockptr will be used to point to blocks in constraint matrices.
-		*/
-
+		
 		
 
 		/*
@@ -334,9 +334,12 @@ extern "C"
 		*/
 
 		int ret;
-		
+		ret=easy_sdp(7,2,C,b,constraints,0.0,&X,&y,&Z,&pobj,&dobj);
 
-		/*write_prob("prob.dat-s",m1,quot,C,b,constraints);*/
+		free_prob(7,2,C,b,constraints,X,y,Z);
+
+		/*Yet to return solutions to scilab*/
+
 
 	    
 	}

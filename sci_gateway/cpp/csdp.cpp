@@ -277,6 +277,7 @@ extern "C"
 				blockptr->constraintnum=i;
 				blockptr->next=NULL;
 				blockptr->nextbyblock=NULL;
+				/*The snippet below causes seg faults*/
 				blockptr->entries=(double *) malloc((itemsum+1)*sizeof(double));
 			   /*	if (blockptr->entries==NULL)
 			    {
@@ -305,7 +306,7 @@ extern "C"
 			    		blockptr->iindices[m]=inc+m;
 						blockptr->jindices[m]= AColPos[sparse_sizes[i]] - inc; 
 						/*sciprint("j index = %i\n",blockptr->jindices[m]);*/
-						blockptr->entries[m]=3.0;
+						blockptr->entries[m]=A0[sparse_sizes[i]] - inc;
 						m++;
 			    	}
 			    	

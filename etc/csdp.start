@@ -1,0 +1,66 @@
+// Copyright (C) 2008 - INRIA
+// Copyright (C) 2009 - DIGITEO
+
+// This file is released under the 3-clause BSD license. See COPYING-BSD.
+
+function toolbox_csdp = startModule()
+   
+  toolbox_name = "csdp"
+  TOOLBOX_TITLE = "FOSSEE GoogleOR Toolbox";
+
+  mprintf("Start " + toolbox_name + "\n");
+
+  if isdef("toolbox_csdp") then
+    warning("csdp is already loaded");
+    return;
+  end
+
+  etc_tlbx  = get_absolute_file_path("csdp.start");
+  etc_tlbx  = getshortpathname(etc_tlbx);
+  root_tlbx = strncpy( etc_tlbx, length(etc_tlbx)-length("\etc\") );
+
+//Load  functions library
+// =============================================================================
+  mprintf("\tLoad macros\n");
+  pathmacros = pathconvert( root_tlbx ) + "macros" + filesep();
+  csdplib = lib(pathmacros);
+  
+// load gateways
+// =============================================================================
+    verboseMode = ilib_verbose();
+    ilib_verbose(0);
+    mprintf("\tLoad libraries & gateways\n");
+    [a, opt] = getversion();
+    ARCH = opt(2);
+    LIB_DIR = [root_tlbx + '/thirdparty/linux/lib/'];
+    link(LIB_DIR + '/libsdp.so');
+exec(pathconvert(root_tlbx+"/sci_gateway/loader_gateway.sce",%f));
+
+// Load and add help chapter
+// =============================================================================
+  if or(getscilabmode() == ["NW";"STD"]) then
+    mprintf("\tLoad help\n");
+    path_addchapter = pathconvert(root_tlbx+"/jar");
+    if ( isdir(path_addchapter) <> [] ) then
+      add_help_chapter(toolbox_name, path_addchapter, %F);
+    end
+  end
+
+// Load demos
+// =============================================================================
+  if or(getscilabmode() == ["NW";"STD"]) then
+    mprintf("\tLoad demos\n");
+    pathdemos = pathconvert(root_tlbx + "/demos/" + toolbox_name + ".dem.gateway.sce", %F, %T);
+    add_demo(TOOLBOX_TITLE, pathdemos);
+  end
+
+// Load Preferences GUI
+// =============================================================================
+  //if getscilabmode() == "STD" then
+    //addModulePreferences(toolbox_name, root_tlbx, etc_tlbx + "toolbox_skeleton_preferences.xml");
+  //end
+
+endfunction
+
+toolbox_csdp = startModule();
+clear startModule; // remove startModule on stack

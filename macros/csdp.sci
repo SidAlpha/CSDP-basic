@@ -1,5 +1,6 @@
-function  csdp(C,A,b,K)
+function  csdp(C,A1,b,K)
     funcprot(0)
-    a = scilab_io(C,A1,b,K);
+    A =  sdpasparse(A1,K);
+    a = scilab_io(C,A,b,K);
     
 endfunction

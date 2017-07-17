@@ -1,4 +1,5 @@
 
+#include "sci_iofunc.hpp"
 extern "C"
 {
 	#include "stdio.h"
@@ -21,36 +22,6 @@ extern "C"
 		int* ItemRow;
 		int* ColPos;
 	};
-
-	inputmat getDoubleMatrix(int argNum, int rows, int cols, int *Address, double *name )
-	{
-		inputmat matrix;
-		SciErr sciErr = getVarAddressFromPosition(pvApiCtx, argNum, &Address);
-	    if (sciErr.iErr)
-	    {
-	        printError(&sciErr, 0);
-	    }
-	    sciErr = getVarDimension(pvApiCtx, Address, &rows, &cols);
-
-	    /* Check that the input argument is a real matrix (and not complex) */
-	    if ( !isDoubleType(pvApiCtx, Address) ||  isVarComplex(pvApiCtx, Address) )
-	    {
-	        Scierror(999, "Wrong type for input argument #%d: A real matrix expected.\n", argNum);
-	    }
-
-	    /* get matrix */
-	    sciErr = getMatrixOfDouble(pvApiCtx, Address, &rows, &cols,&name);
-	    if (sciErr.iErr)
-	    {
-	        printError(&sciErr, 0);
-	    }
-	   
-	    matrix.row = rows;
-	    matrix.col = cols;
-	    matrix.Addr = Address;
-	    matrix.names = name;
-	    return matrix;
-	}
 
 
 	inputmat getMatrixofSparse(int argNum, int rows, int cols, int *Address, double *name )
@@ -93,7 +64,6 @@ extern "C"
 		SciErr sciErr;
 		/*For the objective function*/
 		int m1 = 0, n1 = 0;
-	    int *C0Address = NULL;
 	    double *C1= NULL;
 
 		/*For the Constraint LHS*/
@@ -107,12 +77,10 @@ extern "C"
 
 	    /*For the Constraint RHS*/
 	   	int m3 = 0, n3 = 0;
-	    int *B0Address = NULL;
 	    double *b0 = NULL;
 
 	     /*For the tracker*/
 	    int m4 = 0, n4 = 0;
-	    int *K0Address = NULL;
 	    double *K1 = NULL;
 
 	    int i = 0;
@@ -121,13 +89,20 @@ extern "C"
 	    int l = 0;
 	    int m = 0;
 	    int n = 0;
-	    inputmat mat1 = getDoubleMatrix(1, m1, n1, C0Address, C1 );	
-		m1 = mat1.row;
-		n1 = mat1.col;
-		C0Address = mat1.Addr;
-	    C1 = mat1.names;
+	    if( getDoubleMatrixFromScilab(1, &m1, &n1, &C1 ))
+	    {
+	    	return 1;
+	    }
 	    double (*C0)[n1] = (double (*)[n1])&C1[0];
-
+	    for (i = 0;i<m1;i++)
+		{
+			for (j = 0; j < n1; j++)
+			{
+				sciprint("%.2f  ", C0[i][j]);
+			}
+			sciprint("\n" );
+		}
+		sciprint("\n" );
 
 		inputmat mat2 = getMatrixofSparse(2, m2, n2, A0Address, A0);	
 		m2 = mat2.row;
@@ -160,28 +135,47 @@ extern "C"
 			
 			
 		}
+		sciprint("\n" );
+		if( getDoubleMatrixFromScilab(3, &m3, &n3, &b0 ))
+		{
+			return 1;
+		}
 
-		inputmat mat3 = getDoubleMatrix(3, m3, n3, B0Address, b0 );
-		m3 = mat3.row;
-		n3 = mat3.col;
-		B0Address = mat3.Addr;
-	    b0 = mat3.names;
-
-		inputmat mat4 = getDoubleMatrix(4, m4, n4, K0Address, K1 );
-		m4 = mat4.row;
-		n4 = mat4.col;
-		K0Address = mat4.Addr;
-	    K1 = mat4.names;
-
-	    int K0[n4+1];
+		if(getDoubleMatrixFromScilab(4, &m4, &n4, &K1 ))
+		{
+			return 1;
+		}
+	    int K0[m4+1];
 	    K0[0] = 0;
 	    for (i = 1; i <= n4;i++)
 	    {
-	    	K0[i] = (int)K1[i-1];
+	    	K0[i] = (int) K1[i-1];
 	    }
+	   
 
-	    struct blockmatrix C;
+struct blockmatrix C;
+  double *b;
+  struct constraintmatrix *constraints;
 
+  /*
+   * Storage for the initial and final solutions.
+   */
+
+  struct blockmatrix X,Z;
+  double *y;
+  double pobj,dobj;
+
+  /*
+   * blockptr will be used to point to blocks in constraint matrices.
+   */
+
+  struct sparseblock *blockptr;
+
+  /*
+   * A return code for the call to easy_sdp().
+   */
+
+  int ret;
 		C.nblocks= n4;
 
 		C.blocks=(struct blockrec *)malloc((C.nblocks+1)*sizeof(struct blockrec));
@@ -229,11 +223,10 @@ extern "C"
 	    }
 
 	     /*Build the RHS of the constraints*/
-	    double *b;
 	   	b=(double *)malloc((n3+1)*sizeof(double));
 	  	if (b==NULL)
 	    {
-	      printf("Failed to allocate storage for a!\n");
+	      sciprint("Failed to allocate storage for a!\n");
 	      exit(1);
 	    };
 	    for (i =0;i<n3;i++)
@@ -241,106 +234,299 @@ extern "C"
 	    	b[i+1] = b0[i];
 	    }
 
+	   
 
-	    /*Build the LHS of the constraints*/
-	    struct constraintmatrix *constraints; /*Declare the constraintmatrix data structure*/
-   	    /*Start by changing the constraints to a blockmatrix*/
-	
-	 	constraints=(struct constraintmatrix *)malloc((quot+1)*sizeof(struct constraintmatrix));
-    	if (constraints==NULL)
-	    {
-	      printf("Failed to allocate storage for constraints!\n");
-	      exit(1);
-	    };
-	    k = 0;
-	    struct sparseblock *blockptr;
-	    for(i = 1; i < quot+1; i++)
-	    {
-	    	inc = 0;
-	    	
-	    	constraints[i].blocks=NULL;
+	      constraints=(struct constraintmatrix *)malloc((2+1)*sizeof(struct constraintmatrix));
+  if (constraints==NULL)
+    {
+      sciprint("Failed to allocate storage for constraints!\n");
+      exit(1);
+    };
 
-	    	for (j = 1; j <n4+1; j++)
-	    	{
-	    		/*This snippet computes the number of elements in each block*/
-	    		int itemsum = 0;
-	    		for ( k =((i-1)*n2)+inc; k <((i-1)*n2)+ inc+K0[j]; k ++)
-	    		{
-	    			itemsum = itemsum +AItemRow[k];
-	    			
-	    		}
-	    		inc= inc+K0[j];
-	    		/*End of the "number of elements" snippet*/
-	    		inc = inc+K0[j];
-	    		blockptr->blocknum=j;
-				blockptr->blocksize=K0[j];
-				blockptr->constraintnum=i;
-				blockptr->next=NULL;
-				blockptr->nextbyblock=NULL;
-				/*The snippet below causes seg faults*/
-				blockptr->entries=(double *) malloc((itemsum+1)*sizeof(double));
-			   /*	if (blockptr->entries==NULL)
-			    {
-			        sciprint("Allocation of constraint block failed!\n");
-			        return 1;
-			    };*/
-			    blockptr->iindices=(unsigned short *) malloc((itemsum+1)*sizeof(int));
-			    /*if (blockptr->iindices==NULL)
-			    {
-			        printf("Allocation of constraint block failed!\n");
-			        exit(1);
-			    };*/
-			    blockptr->jindices=(unsigned short *) malloc((itemsum+1)*sizeof(int));
-			    /*if (blockptr->jindices==NULL)
-			    {
-			        printf("Allocation of constraint block failed!\n");
-			        exit(1);
-			    }*/
+  /*
+   * Setup the A1 matrix.  Note that we start with block 3 of A1 and then
+   * do block 1 of A1.  We do this in this order because the blocks will
+   * be inserted into the linked list of A1 blocks in reverse order.  
+   */
 
-			   blockptr->numentries=itemsum;
-			    m= 1;
-			    for (l = 1; l< K0[i+1]; l++)
-			    {
-			    	if (AItemRow[l] != 0)
-			    	{
-			    		blockptr->iindices[m]=inc+m;
-						blockptr->jindices[m]= AColPos[sparse_sizes[i]] - inc; 
-						/*sciprint("j index = %i\n",blockptr->jindices[m]);*/
-						blockptr->entries[m]=A0[sparse_sizes[i]] - inc;
-						m++;
-			    	}
-			    	
-			    }
-			    
+  /*
+   * Terminate the linked list with a NULL pointer.
+   */
 
-	    	}
-	    	blockptr->next=constraints[i].blocks;
-    		constraints[i].blocks=blockptr;
-	    	
-	    }
+  constraints[1].blocks=NULL;
 
-	    struct blockmatrix X,Z;
-		double *y;
+  /*
+   * Now, we handle block 3 of A1.
+   */
 
-		write_prob("prob.dat-s",m1,quot,C,b,constraints);
+  /*
+   * Allocate space for block 3 of A1.
+   */
 
-		initsoln(m1,quot,C,b,constraints,&X,&y,&Z);
-		double pobj,dobj;
+  blockptr=(struct sparseblock *)malloc(sizeof(struct sparseblock));
+  if (blockptr==NULL)
+    {
+      sciprint("Allocation of constraint block failed!\n");
+      exit(1);
+    };
 
-		
-		
+  /*
+   * Initialize block 3.
+   */
 
-		/*
-		* A return code for the call to easy_sdp().
-		*/
+ blockptr->blocknum=3;
+  blockptr->blocksize=2;
+  blockptr->constraintnum=1;
+  blockptr->next=NULL;
+  blockptr->nextbyblock=NULL;
+  blockptr->entries=(double *) malloc((1+1)*sizeof(double));
+  if (blockptr->entries==NULL)
+    {
+      sciprint("Allocation of constraint block failed!\n");
+      exit(1);
+    };
+  blockptr->iindices=(unsigned short *) malloc((1+1)*sizeof(int));
+  if (blockptr->iindices==NULL)
+    {
+      sciprint("Allocation of constraint block failed!\n");
+      exit(1);
+    };
+  blockptr->jindices=(unsigned short *) malloc((1+1)*sizeof(int));
+  if (blockptr->jindices==NULL)
+    {
+      sciprint("Allocation of constraint block failed!\n");
+      exit(1);
+    };
 
-		int ret;
-		ret=easy_sdp(7,2,C,b,constraints,0.0,&X,&y,&Z,&pobj,&dobj);
+  
 
-		free_prob(7,2,C,b,constraints,X,y,Z);
+   blockptr->numentries=1;
 
-		/*Yet to return solutions to scilab*/
 
+
+  blockptr->iindices[1]=1;
+  blockptr->jindices[1]=1;
+  blockptr->entries[1]=1.0;
+
+ 
+
+  blockptr->next=constraints[1].blocks;
+  constraints[1].blocks=blockptr;
+
+ 
+
+  blockptr=(struct sparseblock *)malloc(sizeof(struct sparseblock));
+  if (blockptr==NULL)
+    {
+      sciprint("Allocation of constraint block failed!\n");
+      exit(1);
+    };
+
+ 
+
+  blockptr->blocknum=1;
+  blockptr->blocksize=2;
+  blockptr->constraintnum=1;
+  blockptr->next=NULL;
+  blockptr->nextbyblock=NULL;
+  blockptr->entries=(double *) malloc((3+1)*sizeof(double));
+  if (blockptr->entries==NULL)
+    {
+      sciprint("Allocation of constraint block failed!\n");
+      exit(1);
+    };
+  blockptr->iindices=(unsigned short *) malloc((3+1)*sizeof(int));
+  if (blockptr->iindices==NULL)
+    {
+      sciprint("Allocation of constraint block failed!\n");
+      exit(1);
+    };
+  blockptr->jindices=(unsigned short *) malloc((3+1)*sizeof(int));
+  if (blockptr->jindices==NULL)
+    {
+      sciprint("Allocation of constraint block failed!\n");
+      exit(1);
+    };
+
+  
+
+  blockptr->numentries=3;
+
+ 
+
+  blockptr->iindices[1]=1;
+  blockptr->jindices[1]=1;
+  blockptr->entries[1]=3.0;
+
+ 
+  blockptr->iindices[2]=1;
+  blockptr->jindices[2]=2;
+  blockptr->entries[2]=1.0;
+
+ 
+
+  blockptr->iindices[3]=2;
+  blockptr->jindices[3]=2;
+  blockptr->entries[3]=3.0;
+
+  
+
+  blockptr->next=constraints[1].blocks;
+  constraints[1].blocks=blockptr;
+
+  
+
+  constraints[2].blocks=NULL;
+
+  
+
+  blockptr=(struct sparseblock *)malloc(sizeof(struct sparseblock));
+  if (blockptr==NULL)
+    {
+      sciprint("Allocation of constraint block failed!\n");
+      exit(1);
+    };
+
+  
+
+  blockptr->blocknum=3;
+  blockptr->blocksize=2;
+  blockptr->constraintnum=2;
+  blockptr->next=NULL;
+  blockptr->nextbyblock=NULL;
+  blockptr->entries=(double *) malloc((1+1)*sizeof(double));
+    if (blockptr->entries==NULL)
+    {
+      sciprint("Allocation of constraint block failed!\n");
+      exit(1);
+    };
+  blockptr->iindices=(unsigned short *) malloc((1+1)*sizeof(int));
+  if (blockptr->iindices==NULL)
+    {
+      sciprint("Allocation of constraint block failed!\n");
+      exit(1);
+    };
+  blockptr->jindices=(unsigned short *) malloc((1+1)*sizeof(int));
+  if (blockptr->jindices==NULL)
+    {
+      sciprint("Allocation of constraint block failed!\n");
+      exit(1);
+    };
+
+  
+
+  blockptr->numentries=1;
+
+
+
+  blockptr->iindices[1]=2;
+  blockptr->jindices[1]=2;
+  blockptr->entries[1]=1.0;
+
+ 
+
+  blockptr->next=constraints[2].blocks;
+  constraints[2].blocks=blockptr;
+
+ 
+
+  blockptr=(struct sparseblock *)malloc(sizeof(struct sparseblock));
+  if (blockptr==NULL)
+    {
+      sciprint("Allocation of constraint block failed!\n");
+      exit(1);
+    };
+
+  
+
+  blockptr->blocknum=2;
+  blockptr->blocksize=3;
+  blockptr->constraintnum=2;
+  blockptr->next=NULL;
+  blockptr->nextbyblock=NULL;
+  blockptr->entries=(double *) malloc((4+1)*sizeof(double));
+  if (blockptr->entries==NULL)
+    {
+      sciprint("Allocation of constraint block failed!\n");
+      exit(1);
+    };
+  blockptr->iindices=(unsigned short *) malloc((4+1)*sizeof(int));
+  if (blockptr->iindices==NULL)
+    {
+      sciprint("Allocation of constraint block failed!\n");
+      exit(1);
+    };
+  blockptr->jindices=(unsigned short *) malloc((4+1)*sizeof(int));
+  if (blockptr->jindices==NULL)
+    {
+      sciprint("Allocation of constraint block failed!\n");
+      exit(1);
+    };
+
+ 
+
+  blockptr->numentries=4;
+
+
+  
+
+  blockptr->iindices[1]=1;
+  blockptr->jindices[1]=1;
+  blockptr->entries[1]=3.0;
+
+  
+
+  blockptr->iindices[2]=2;
+  blockptr->jindices[2]=2;
+  blockptr->entries[2]=4.0;
+
+  
+
+  blockptr->iindices[3]=3;
+  blockptr->jindices[3]=3;
+  blockptr->entries[3]=5.0;
+
+  
+
+  blockptr->iindices[4]=1;
+  blockptr->jindices[4]=3;
+  blockptr->entries[4]=1.0;
+
+ 
+
+  blockptr->next=constraints[2].blocks;
+  constraints[2].blocks=blockptr;
+
+  sciprint("\n");
+  sciprint("Here We are");
+    sciprint("\n");
+
+
+ /* write_prob("prob.dat-s",7,2,C,b,constraints);*/
+
+ 
+  initsoln(7,2,C,b,constraints,&X,&y,&Z);
+
+ 
+sciprint("\n");
+  sciprint("Here We are again");
+    sciprint("\n");
+  ret=easy_sdp(7,2,C,b,constraints,0.0,&X,&y,&Z,&pobj,&dobj);
+
+  if (ret == 0)
+    sciprint("The objective value is %.7e \n",(dobj+pobj)/2);
+  else
+    sciprint("SDP failed.\n");
+
+  
+
+  write_sol("prob.sol",7,2,X,y,Z);
+
+ 
+
+  /*free_prob(7,2,C,b,constraints,X,y,Z);
+  exit(0);
+	    */
 
 	    
 	}
